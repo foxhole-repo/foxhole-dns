@@ -1,0 +1,6 @@
+.work/
+.tools/
+public/
+dev/
+*.private.pem
+*.key

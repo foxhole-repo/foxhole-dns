@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "name": "foxhole-adguard-dns-filter",
+  "format": "sing-box-srs",
+  "generated_at": "2026-05-22T17:34:03Z",
+  "source": {
+    "name": "AdGuardSDNSFilter",
+    "repo": "https://github.com/AdguardTeam/AdGuardSDNSFilter.git",
+    "commit": "ffc4921132c49a7cff08a8b38b4b376867f93d3b",
+    "license": "GPL-3.0",
+    "input_path": "Filters/filter.txt",
+    "input_sha256": "f0b5c66b540390980639c69c6e375c2cd00ed266b308e90a9153958fc5f8c87f"
+  },
+  "artifact": {
+    "file": "adguard-dns-filter.srs",
+    "size": 1430792,
+    "sha256": "9f50de602d0a59629a1b75a4cc21a32e2ab1be1697750fcfc85f54b1525a85f9"
+  },
+  "compatibility": {
+    "sing_box_version": "1.13.11",
+    "min_app_version": "1.0.0-beta1"
+  }
+}

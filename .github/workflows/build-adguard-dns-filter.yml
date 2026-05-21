@@ -1,0 +1,115 @@
+name: Build AdGuard DNS rule set
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 */3 * *"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: dns-rule-set
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      SING_BOX_VERSION: "1.13.11"
+      MIN_APP_VERSION: "1.0.0-beta1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl jq openssl
+
+      - name: Download sing-box
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          curl -fsSL \
+            "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-amd64.tar.gz" \
+            -o .tools/sing-box.tar.gz
+          tar -xzf .tools/sing-box.tar.gz -C .tools
+          find .tools -type f -name sing-box -exec cp {} .tools/sing-box-bin \;
+          chmod +x .tools/sing-box-bin
+          .tools/sing-box-bin version
+
+      - name: Build and sign rule set
+        env:
+          FOXHOLE_DNS_SIGNING_KEY_PEM: ${{ secrets.FOXHOLE_DNS_SIGNING_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FOXHOLE_DNS_SIGNING_KEY_PEM}" ]; then
+            echo "Missing FOXHOLE_DNS_SIGNING_KEY_PEM repository secret" >&2
+            exit 1
+          fi
+          mkdir -p public .work
+          if ! OUT_DIR="$PWD/public" SING_BOX_BIN="$PWD/.tools/sing-box-bin" ./build-adguard-dns-filter.sh > .work/build.log 2>&1; then
+            tail -n 200 .work/build.log
+            exit 1
+          fi
+          tail -n 40 .work/build.log
+
+      - name: Upload generated files
+        uses: actions/upload-artifact@v7
+        with:
+          name: foxhole-dns-rule-set
+          path: public/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: public/
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="dns-rules-$(date -u +'%Y%m%d-%H%M%S')"
+          gh release create "$tag" public/* \
+            --title "Foxhole DNS rules ${tag#dns-rules-}" \
+            --notes "Generated signed DNS rule-set data from the upstream AdGuard DNS filter."
+
+      - name: Delete old DNS releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          keep=5
+
+          gh release list \
+            --limit 100 \
+            --json tagName,createdAt \
+            --jq "sort_by(.createdAt) | reverse | .[$keep:] | .[].tagName" |
+          while read -r tag; do
+            if [ -n "$tag" ]; then
+              echo "Deleting old release and tag: $tag"
+              gh release delete "$tag" --yes --cleanup-tag
+            fi
+          done
